@@ -22,6 +22,7 @@ import * as os from 'os';
 import * as fs from 'fs';
 import * as playwright from 'playwright';
 import { Browser, BrowserContext, Page } from 'playwright';
+import { electron } from 'playwright-electron'
 import { ScriptController } from './scriptController';
 import { OutputMultiplexer, TerminalOutput, FileOutput } from './codegen/outputs';
 import { CodeGenerator, CodeGeneratorOutput } from './codegen/codeGenerator';
@@ -84,8 +85,9 @@ program
     .description('open page and generate code for user actions')
     .option('-o, --output <file name>', 'saves the generated script to a file')
     .option('--target <language>', `language to use, one of javascript, python, python-async, csharp`, process.env.PW_CLI_TARGET_LANG || 'javascript')
+    .option('--electron <electron path>', 'runs the electron executable instead of a browser')
     .action(function(url, command) {
-      codegen(command.parent, url, command.target, command.output);
+      codegen(command.parent, url, command.target, command.output, command.electron);
     }).on('--help', function() {
       console.log('');
       console.log('Examples:');
@@ -364,7 +366,7 @@ async function pdf(options: Options, captureOptions: CaptureOptions, url: string
   await browser.close();
 }
 
-async function codegen(options: Options, url: string | undefined, target: string, outputFile?: string) {
+async function codegen(options: Options, url: string | undefined, target: string, outputFile?: string, electronPath?: string) {
   let languageGenerator: LanguageGenerator;
 
   switch (target) {
@@ -375,7 +377,28 @@ async function codegen(options: Options, url: string | undefined, target: string
     default: throw new Error(`Invalid target: '${target}'`);
   }
 
-  const { context, browserName, launchOptions, contextOptions } = await launchContext(options, false);
+  let context: BrowserContext;
+  let browserName: string;
+  let launchOptions: playwright.LaunchOptions;
+  let contextOptions: playwright.BrowserContextOptions
+  if(electronPath)
+  {  
+    const app = await electron.launch(electronPath, {});
+    context = app.context() as any as BrowserContext;
+    browserName = 'electron';
+    launchOptions = {};
+    contextOptions = {};
+    // TODO: register some sort of close handler to exit the script when electron exits. for some reason page close isn't firing.
+
+    // for some reason, we need to launch something else in order to get left mouse clicks to reach our application. wtf?
+    await playwright.chromium.launch();
+  } else {
+    const launch = await launchContext(options, false);
+    context = launch.context;
+    browserName = launch.browserName;
+    launchOptions = launch.launchOptions;
+    contextOptions = launch.contextOptions;
+  }
 
   if (process.env.PWTRACE)
     contextOptions.recordVideo = { dir: path.join(process.cwd(), '.trace') };
@@ -387,7 +410,10 @@ async function codegen(options: Options, url: string | undefined, target: string
 
   const generator = new CodeGenerator(browserName, launchOptions, contextOptions, output, languageGenerator, options.device, options.saveStorage);
   new ScriptController(context, generator);
-  await openPage(context, url);
+  if(!electronPath)
+  {
+    await openPage(context, url);
+  }
   if (process.env.PWCLI_EXIT_FOR_TEST)
     await Promise.all(context.pages().map(p => p.close()));
 }
