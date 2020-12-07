@@ -388,15 +388,23 @@ async function codegen(options: Options, url: string | undefined, target: string
     browserName = 'electron';
     launchOptions = {};
     contextOptions = {};
-    // TODO: register some sort of close handler to exit the script when electron exits. for some reason page close isn't firing.
 
-    // for some reason, we need to launch something else in order to get left mouse clicks to reach our application. wtf?
-    await playwright.chromium.launch();
+    // wait for the main window to finish loading.
+    await new Promise<void>(resolve => {
+      app.on('window', (page) => {
+        if(!page.url().startsWith('devtools://')) {
+          resolve();
+        }
+      })
+    });
 
-    // TODO: handle waiting for the last window to close.
+    // once all windows have closed, exit.
     app.on('window', page => {
       page.on('close', () => {
-        app.close().catch( x => null);
+        if(!app.windows().length)
+        {
+          app.close().catch( x => null);
+        }
       });
     });
   } else {
