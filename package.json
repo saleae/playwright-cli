@@ -34,12 +34,14 @@
     "playwright": "=1.7.0-next.1607022026758"
   },
   "devDependencies": {
-    "folio": "^0.3.16",
     "css-loader": "^4.3.0",
+    "electron": "^11.0.3",
     "file-loader": "^6.1.0",
+    "folio": "^0.3.16",
     "html-webpack-plugin": "^4.4.1",
     "monaco-editor": "^0.20.0",
     "pkg": "^4.4.9",
+    "playwright-electron": "^0.5.0",
     "style-loader": "^1.2.1",
     "ts-loader": "^8.0.3",
     "typescript": "^4.0.2",
