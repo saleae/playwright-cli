@@ -392,6 +392,13 @@ async function codegen(options: Options, url: string | undefined, target: string
 
     // for some reason, we need to launch something else in order to get left mouse clicks to reach our application. wtf?
     await playwright.chromium.launch();
+
+    // TODO: handle waiting for the last window to close.
+    app.on('window', page => {
+      page.on('close', () => {
+        app.close().catch( x => null);
+      });
+    });
   } else {
     const launch = await launchContext(options, false);
     context = launch.context;
