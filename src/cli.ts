@@ -21,8 +21,8 @@ import * as program from 'commander';
 import * as os from 'os';
 import * as fs from 'fs';
 import * as playwright from 'playwright';
-import { Browser, BrowserContext, Page } from 'playwright';
-import { electron } from 'playwright-electron'
+import { Browser, BrowserContext, LaunchOptions, Page } from 'playwright';
+import { electron, ElectronApplication } from 'playwright-electron'
 import { ScriptController } from './scriptController';
 import { OutputMultiplexer, TerminalOutput, FileOutput } from './codegen/outputs';
 import { CodeGenerator, CodeGeneratorOutput } from './codegen/codeGenerator';
@@ -31,10 +31,10 @@ import { showTraceViewer } from './traceViewer/traceViewer';
 import { PythonLanguageGenerator } from './codegen/languages/python';
 import { CSharpLanguageGenerator } from './codegen/languages/csharp';
 import { printApiJson, runServer } from './driver';
-
+const defaultElectronPath: string = require('electron');
 program
     .version('Version ' + require('../package.json').version)
-    .option('-b, --browser <browserType>', 'browser to use, one of cr, chromium, ff, firefox, wk, webkit', 'chromium')
+    .option('-b, --browser <browserType>', 'browser to use, one of cr, chromium, ff, firefox, wk, webkit, el, electron', 'chromium')
     .option('--color-scheme <scheme>', 'emulate preferred color scheme, "light" or "dark"')
     .option('--device <deviceName>', 'emulate device, for example  "iPhone 11"')
     .option('--geolocation <coordinates>', 'specify geolocation coordinates, for example "37.819722,-122.478611"')
@@ -45,7 +45,8 @@ program
     .option('--timezone <time zone>', 'time zone to emulate, for example "Europe/Rome"')
     .option('--timeout <timeout>', 'timeout for Playwright actions in milliseconds', '10000')
     .option('--user-agent <ua string>', 'specify user agent string')
-    .option('--viewport-size <size>', 'specify browser viewport size in pixels, for example "1280, 720"');
+    .option('--viewport-size <size>', 'specify browser viewport size in pixels, for example "1280, 720"')
+    .option('--electron-path <electron path>', 'electron only, run the specified electron binary instead of the stock npm version', );
 
 program
     .command('open [url]')
@@ -64,6 +65,7 @@ const browsers = [
   { alias: 'cr', name: 'Chromium', type: 'chromium' },
   { alias: 'ff', name: 'Firefox', type: 'firefox' },
   { alias: 'wk', name: 'WebKit', type: 'webkit' },
+  { alias: 'el', name: 'Electron', type: 'electron' },
 ];
 
 for (const {alias, name, type} of browsers) {
@@ -85,9 +87,8 @@ program
     .description('open page and generate code for user actions')
     .option('-o, --output <file name>', 'saves the generated script to a file')
     .option('--target <language>', `language to use, one of javascript, python, python-async, csharp`, process.env.PW_CLI_TARGET_LANG || 'javascript')
-    .option('--electron <electron path>', 'runs the electron executable instead of a browser')
     .action(function(url, command) {
-      codegen(command.parent, url, command.target, command.output, command.electron);
+      codegen(command.parent, url, command.target, command.output);
     }).on('--help', function() {
       console.log('');
       console.log('Examples:');
@@ -159,6 +160,32 @@ if (process.env.PWTRACE) {
       });
 }
 
+const electronBrowser = {
+  connect: () => {throw Error('not supported');},
+  executablePath: () => {
+    return electronBrowser.path;
+  },
+  launch: (options: LaunchOptions) => {
+    // LaunchOptions not supported.
+    return electron.launch(electronBrowser.executablePath(), { args: electronBrowser.launchArgs });
+  },
+  launchPersistentContext: () => {
+    throw Error('not supported');
+  },
+  launchServer: ()  => {
+    throw Error('not supported');
+  },
+  name: () => {
+    return 'Electron';
+  },
+  path: defaultElectronPath,
+  launchArgs: [] as string[],
+  setUrl: (url: string) => {
+      electronBrowser.launchArgs = [url]
+  }
+}
+
+
 // Implement driver command.
 if (process.argv[2] === 'run-driver')
   runServer();
@@ -181,6 +208,7 @@ type Options = {
   timezone?: string;
   viewportSize?: string;
   userAgent?: string;
+  electronPath?: string;
 };
 
 type CaptureOptions = {
@@ -189,7 +217,8 @@ type CaptureOptions = {
   fullPage: boolean;
 };
 
-async function launchContext(options: Options, headless: boolean): Promise<{ browser: Browser, browserName: string, launchOptions: playwright.LaunchOptions, contextOptions: playwright.BrowserContextOptions, context: BrowserContext }> {
+
+async function launchContext(options: Options, headless: boolean, electronUrl?: string): Promise<{ browser: Browser, browserName: string, launchOptions: playwright.LaunchOptions, contextOptions: playwright.BrowserContextOptions, context: BrowserContext }> {
   validateOptions(options);
   const browserType = lookupBrowserType(options);
   const launchOptions: playwright.LaunchOptions = { headless };
@@ -277,29 +306,47 @@ async function launchContext(options: Options, headless: boolean): Promise<{ bro
 
   // Close app when the last window closes.
 
-  const context = await browser.newContext(contextOptions);
+  let context: BrowserContext;
 
-  let closingBrowser = false;
-  async function closeBrowser() {
-    // We can come here multiple times. For example, saving storage creates
-    // a temporary page and we call closeBrowser again when that page closes.
-    if (closingBrowser)
-      return;
-    closingBrowser = true;
-    if (options.saveStorage)
-      await context.storageState({ path: options.saveStorage }).catch(e => null);
-    await browser.close();
-  }
-
-  context.on('page', page => {
-    page.on('close', () => {
-      const hasPage = browser.contexts().some(context => context.pages().length > 0);
-      if (hasPage)
-        return;
-      // Avoid the error when the last page is closed because the browser has been closed.
-      closeBrowser().catch(e => null);
+  if(isElectronBrowserType(browser, browserType.name())) {
+    const app = browser as ElectronApplication;
+    context = app.context() as any as BrowserContext;
+    // wait for at least 1 window to appear. TODO: can we support openPage like the other browsers?
+    await new Promise<void>(resolve => {
+      app.on('window', (page) => {
+        if(!page.url().startsWith('devtools://')) {
+          page.on('close', () => {
+            app.close().catch( err => null);
+          })
+          resolve();
+        }
+      })
     });
-  });
+  } else {
+
+    context = await browser.newContext(contextOptions);
+
+    let closingBrowser = false;
+    async function closeBrowser() {
+      // We can come here multiple times. For example, saving storage creates
+      // a temporary page and we call closeBrowser again when that page closes.
+      if (closingBrowser)
+        return;
+      closingBrowser = true;
+      if (options.saveStorage)
+        await context.storageState({ path: options.saveStorage }).catch(e => null);
+      await browser.close();
+    }
+    context.on('page', page => {
+      page.on('close', () => {
+        const hasPage = browser.contexts().some(context => context.pages().length > 0);
+        if (hasPage)
+          return;
+        // Avoid the error when the last page is closed because the browser has been closed.
+        closeBrowser().catch(e => null);
+      });
+    });
+  }
   if (options.timeout) {
     context.setDefaultTimeout(parseInt(options.timeout, 10));
     context.setDefaultNavigationTimeout(parseInt(options.timeout, 10));
@@ -308,7 +355,7 @@ async function launchContext(options: Options, headless: boolean): Promise<{ bro
   // Omit options that we add automatically for presentation purpose.
   delete launchOptions.headless;
   delete contextOptions.deviceScaleFactor;
-  return { browser, browserName: browserType.name(), context, contextOptions, launchOptions };
+  return { browser: (browser as Browser), browserName: browserType.name(), context, contextOptions, launchOptions };
 }
 
 async function openPage(context: playwright.BrowserContext, url: string | undefined): Promise<Page> {
@@ -324,9 +371,14 @@ async function openPage(context: playwright.BrowserContext, url: string | undefi
 }
 
 async function open(options: Options, url: string | undefined) {
-  const { context } = await launchContext(options, false);
+  if(url) {
+    electronBrowser.setUrl(url);
+  }
+  const { context, browserName } = await launchContext(options, false);
   new ScriptController(context, undefined);
-  await openPage(context, url);
+  if( browserName !== 'Electron') {
+    await openPage(context, url);
+  }
   if (process.env.PWCLI_EXIT_FOR_TEST)
     await Promise.all(context.pages().map(p => p.close()));
 }
@@ -343,6 +395,9 @@ async function waitForPage(page: Page, captureOptions: CaptureOptions) {
 }
 
 async function screenshot(options: Options, captureOptions: CaptureOptions, url: string, path: string) {
+  if(url) {
+    electronBrowser.setUrl(url);
+  }
   const { browser, context } = await launchContext(options, true);
   console.log('Navigating to ' + url);
   const page = await openPage(context, url);
@@ -366,7 +421,11 @@ async function pdf(options: Options, captureOptions: CaptureOptions, url: string
   await browser.close();
 }
 
-async function codegen(options: Options, url: string | undefined, target: string, outputFile?: string, electronPath?: string) {
+async function codegen(options: Options, url: string | undefined, target: string, outputFile?: string) {
+  if(url) {
+    electronBrowser.setUrl(url);
+  }
+
   let languageGenerator: LanguageGenerator;
 
   switch (target) {
@@ -377,43 +436,7 @@ async function codegen(options: Options, url: string | undefined, target: string
     default: throw new Error(`Invalid target: '${target}'`);
   }
 
-  let context: BrowserContext;
-  let browserName: string;
-  let launchOptions: playwright.LaunchOptions;
-  let contextOptions: playwright.BrowserContextOptions
-  if(electronPath)
-  {  
-    const app = await electron.launch(electronPath, {});
-    context = app.context() as any as BrowserContext;
-    browserName = 'electron';
-    launchOptions = {};
-    contextOptions = {};
-
-    // wait for the main window to finish loading.
-    await new Promise<void>(resolve => {
-      app.on('window', (page) => {
-        if(!page.url().startsWith('devtools://')) {
-          resolve();
-        }
-      })
-    });
-
-    // once all windows have closed, exit.
-    app.on('window', page => {
-      page.on('close', () => {
-        if(!app.windows().length)
-        {
-          app.close().catch( x => null);
-        }
-      });
-    });
-  } else {
-    const launch = await launchContext(options, false);
-    context = launch.context;
-    browserName = launch.browserName;
-    launchOptions = launch.launchOptions;
-    contextOptions = launch.contextOptions;
-  }
+  const { contextOptions, browserName, context, launchOptions } = await launchContext(options, false);
 
   if (process.env.PWTRACE)
     contextOptions.recordVideo = { dir: path.join(process.cwd(), '.trace') };
@@ -425,7 +448,7 @@ async function codegen(options: Options, url: string | undefined, target: string
 
   const generator = new CodeGenerator(browserName, launchOptions, contextOptions, output, languageGenerator, options.device, options.saveStorage);
   new ScriptController(context, generator);
-  if(!electronPath)
+  if(browserName !== 'Electron')
   {
     await openPage(context, url);
   }
@@ -433,19 +456,30 @@ async function codegen(options: Options, url: string | undefined, target: string
     await Promise.all(context.pages().map(p => p.close()));
 }
 
-function lookupBrowserType(options: Options): playwright.BrowserType<playwright.WebKitBrowser | playwright.ChromiumBrowser | playwright.FirefoxBrowser> {
+function isElectronBrowserType (browser: playwright.WebKitBrowser | playwright.ChromiumBrowser | playwright.FirefoxBrowser | ElectronApplication, type: string): browser is ElectronApplication {
+  return type === electronBrowser.name();
+}
+
+
+function lookupBrowserType(options: Options): playwright.BrowserType<playwright.WebKitBrowser | playwright.ChromiumBrowser | playwright.FirefoxBrowser | ElectronApplication> {
   let name = options.browser;
   if (options.device) {
     const device = playwright.devices[options.device];
     name = device.defaultBrowserType;
   }
+  if(options.electronPath) {
+    electronBrowser.path = options.electronPath;
+  }
+
   switch (name) {
     case 'chromium': return playwright.chromium!;
     case 'webkit': return playwright.webkit!;
     case 'firefox': return playwright.firefox!;
+    case 'electron': return electronBrowser;
     case 'cr': return playwright.chromium!;
     case 'wk': return playwright.webkit!;
     case 'ff': return playwright.firefox!;
+    case 'el': return electronBrowser;
   }
   program.help();
 }
