@@ -308,22 +308,21 @@ async function launchContext(options: Options, headless: boolean, electronUrl?: 
 
   let context: BrowserContext;
 
-  if(isElectronBrowserType(browser, browserType.name())) {
+  if (isElectronBrowserType(browser, browserType.name())) {
     const app = browser as ElectronApplication;
     context = app.context() as any as BrowserContext;
     // wait for at least 1 window to appear. TODO: can we support openPage like the other browsers?
     await new Promise<void>(resolve => {
-      app.on('window', (page) => {
-        if(!page.url().startsWith('devtools://')) {
+      app.on('window', page => {
+        if (!page.url().startsWith('devtools://')) {
           page.on('close', () => {
-            app.close().catch( err => null);
-          })
+            app.close().catch(err => null);
+          });
           resolve();
         }
-      })
+      });
     });
   } else {
-
     context = await browser.newContext(contextOptions);
 
     let closingBrowser = false;
