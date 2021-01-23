@@ -309,6 +309,7 @@ async function launchContext(options: Options, headless: boolean, electronUrl?: 
   let context: BrowserContext;
 
   if (isElectronBrowserType(browser, browserType.name())) {
+    launchOptions.executablePath = electronBrowser.executablePath();
     const app = browser as ElectronApplication;
     context = app.context() as any as BrowserContext;
     // wait for at least 1 window to appear. TODO: can we support openPage like the other browsers?
@@ -316,7 +317,7 @@ async function launchContext(options: Options, headless: boolean, electronUrl?: 
       app.on('window', page => {
         if (!page.url().startsWith('devtools://')) {
           page.on('close', () => {
-            app.close().catch(err => null);
+            app.close().catch(err => null); // TODO: make closing the app reliable!
           });
           resolve();
         }
@@ -447,10 +448,9 @@ async function codegen(options: Options, url: string | undefined, target: string
 
   const generator = new CodeGenerator(browserName, launchOptions, contextOptions, output, languageGenerator, options.device, options.saveStorage);
   new ScriptController(context, generator);
-  if(browserName !== 'Electron')
-  {
+  if (browserName !== 'Electron')
     await openPage(context, url);
-  }
+
   if (process.env.PWCLI_EXIT_FOR_TEST)
     await Promise.all(context.pages().map(p => p.close()));
 }
@@ -466,9 +466,8 @@ function lookupBrowserType(options: Options): playwright.BrowserType<playwright.
     const device = playwright.devices[options.device];
     name = device.defaultBrowserType;
   }
-  if(options.electronPath) {
+  if (options.electronPath)
     electronBrowser.path = options.electronPath;
-  }
 
   switch (name) {
     case 'chromium': return playwright.chromium!;

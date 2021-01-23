@@ -21,6 +21,7 @@ import { actionTitle, NavigationSignal, PopupSignal, DownloadSignal, DialogSigna
 import { MouseClickOptions, toModifiers } from '../../utils';
 
 export class JavaScriptLanguageGenerator implements LanguageGenerator {
+  private isElectron: boolean = false;
 
   highligherType(): HighlighterType {
     return 'javascript';
@@ -33,9 +34,22 @@ export class JavaScriptLanguageGenerator implements LanguageGenerator {
     formatter.add('// ' + actionTitle(action));
 
     if (action.name === 'openPage') {
+      if (this.isElectron) {
+        formatter.add(`let page;
+  await new Promise((resolve, reject) => {
+    app.on('window', p => {
+      page = p;
+      resolve();
+    });
+  });`);
+        return formatter.format(); // no need to open pages with electron
+      }
       formatter.add(`const ${pageAlias} = await context.newPage();`);
       if (action.url && action.url !== 'about:blank' && action.url !== 'chrome://newtab/')
         formatter.add(`${pageAlias}.goto('${action.url}');`);
+      return formatter.format();
+    } else if (action.name === 'closePage' && this.isElectron) {
+      // there is no page close, only app close.
       return formatter.format();
     }
 
@@ -146,17 +160,34 @@ export class JavaScriptLanguageGenerator implements LanguageGenerator {
 
   generateHeader(browserName: string, launchOptions: playwright.LaunchOptions, contextOptions: playwright.BrowserContextOptions, deviceName?: string): string {
     const formatter = new JavaScriptFormatter();
-    formatter.add(`
+
+    if (browserName === 'Electron') {
+      this.isElectron = true;
+      formatter.add(`
+      const { electron } = require('playwright-electron');
+
+      (async () => {
+        const app = await electron.launch(${launchOptions.executablePath ? `'${launchOptions.executablePath?.replace(/\\/g, '\\\\')}'` : ''});
+        const context = app.context();`);
+    } else {
+      formatter.add(`
       const { ${browserName}${deviceName ? ', devices' : ''} } = require('playwright');
 
       (async () => {
         const browser = await ${browserName}.launch(${formatObjectOrVoid(launchOptions)});
         const context = await browser.newContext(${formatContextOptions(contextOptions, deviceName)});`);
+    }
     return formatter.format();
   }
 
   generateFooter(saveStorage: string | undefined): string {
     const storageStateLine = saveStorage ? `\n  await context.storageState({ path: '${saveStorage}' })` : '';
+    if (this.isElectron) {
+      return `
+  await new Promise(resolve => setTimeout(resolve, 1000));
+  await app.close();
+})();`;
+    }
     return `  // ---------------------${storageStateLine}
   await context.close();
   await browser.close();
