@@ -16,7 +16,7 @@
 
 import * as playwright from 'playwright';
 import { Frame } from 'playwright';
-import { LanguageGenerator } from './languages'
+import { LanguageGenerator } from './languages';
 import { Action, Signal } from './recorderActions';
 
 export type ActionInContext = {
@@ -40,14 +40,14 @@ export class CodeGenerator {
   private _output: CodeGeneratorOutput;
   private _footerText: string;
 
-  constructor(browserName: string, launchOptions: playwright.LaunchOptions, contextOptions: playwright.BrowserContextOptions, output: CodeGeneratorOutput, languageGenerator: LanguageGenerator, deviceName: string | undefined) {
-    this._output = output
-    this._languageGenerator = languageGenerator
+  constructor(browserName: string, launchOptions: playwright.LaunchOptions, contextOptions: playwright.BrowserContextOptions, output: CodeGeneratorOutput, languageGenerator: LanguageGenerator, deviceName: string | undefined, saveStorage: string | undefined) {
+    this._output = output;
+    this._languageGenerator = languageGenerator;
 
     launchOptions = { headless: false, ...launchOptions };
     const header = this._languageGenerator.generateHeader(browserName, launchOptions, contextOptions, deviceName);
     this._output.printLn(header);
-    this._footerText = '\n' + this._languageGenerator.generateFooter();
+    this._footerText = '\n' + this._languageGenerator.generateFooter(saveStorage);
     this._output.printLn(this._footerText);
   }
 

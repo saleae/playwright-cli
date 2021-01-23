@@ -1,4 +1,4 @@
-1/**
+1;/**
  * Copyright (c) Microsoft Corporation.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -14,17 +14,22 @@
  * limitations under the License.
  */
 
-import { TraceModel } from '../traceModel';
+import { TraceModel, VideoMetaInfo } from '../traceModel';
 import './common.css';
-import './components/dialog.css';
-import './components/dropTarget.css';
-import './components/listView.css';
-import './components/splitView.css';
-import './components/tabbedPane.css';
-import './components/toolbarView.css';
 import './third_party/vscode/codicon.css';
 import { Workbench } from './ui/workbench';
-import * as components from './components/components';
+import * as React from 'react';
+import * as ReactDOM from 'react-dom';
+import { ActionTraceEvent } from '../traceTypes';
+
+declare global {
+  interface Window {
+    getTraceModel(): Promise<TraceModel>;
+    getVideoMetaInfo(videoId: string): Promise<VideoMetaInfo | undefined>;
+    readFile(filePath: string): Promise<string>;
+    renderSnapshot(action: ActionTraceEvent): void;
+  }
+}
 
 function platformName(): string {
   if (window.navigator.userAgent.includes('Linux'))
@@ -44,12 +49,9 @@ function platformName(): string {
   document!.defaultView!.addEventListener('blur', event => {
     document.body.classList.add('inactive');
   }, false);
+
   document.documentElement.classList.add(platformName());
-  const traceModel = await (window as any).getTraceModel() as TraceModel;
-  await components.initialize();
-  const workbench = new Workbench(traceModel);
-  document.body.appendChild(workbench.element);
-  workbench.pack();
-  // TODO: Things jump because the film strip is loading lazily. Figure this out.
-  setTimeout(() => workbench.pack(), 100);
+
+  const traceModel = await window.getTraceModel();
+  ReactDOM.render(<Workbench traceModel={traceModel} />, document.querySelector('#root'));
 })();

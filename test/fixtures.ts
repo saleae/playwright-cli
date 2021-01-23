@@ -15,7 +15,7 @@
  * limitations under the License.
  */
 
-import * as http from 'http'
+import * as http from 'http';
 import { Writable } from 'stream';
 import * as path from 'path';
 import { spawn, ChildProcessWithoutNullStreams } from 'child_process';
@@ -47,7 +47,7 @@ fixtures.contextWrapper.init(async ({ browser }, runTest) => {
   const outputBuffer = new WritableBuffer();
   const output = new TerminalOutput(outputBuffer as any as Writable, 'javascript');
   const languageGenerator = new JavaScriptLanguageGenerator();
-  const generator = new CodeGenerator('chromium', {}, {}, output, languageGenerator, undefined);
+  const generator = new CodeGenerator('chromium', {}, {}, output, languageGenerator, undefined, undefined);
   new ScriptController(context, generator);
   await runTest({ context, output: outputBuffer });
   await context.close();
@@ -62,14 +62,14 @@ fixtures.recorder.init(async ({ contextWrapper }, runTest) => {
 });
 
 fixtures.httpServer.init(async ({testWorkerIndex}, runTest) => {
-  let handler = (req: http.IncomingMessage, res: http.ServerResponse) => res.end()
+  let handler = (req: http.IncomingMessage, res: http.ServerResponse) => res.end();
   const port = 8907 + testWorkerIndex * 2;
-  const server = http.createServer((req: http.IncomingMessage, res: http.ServerResponse)=> handler(req, res)).listen(port);
+  const server = http.createServer((req: http.IncomingMessage, res: http.ServerResponse) => handler(req, res)).listen(port);
   await runTest({
     setHandler: newHandler => handler = newHandler,
     PREFIX: `http://127.0.0.1:${port}`,
-  })
-  server.close()
+  });
+  server.close();
 }, { scope: 'worker' });
 
 
@@ -119,7 +119,7 @@ class WritableBuffer {
   }
 
   text() {
-    return removeAnsiColors(this.data())
+    return removeAnsiColors(this.data());
   }
 }
 
@@ -193,21 +193,21 @@ class Recorder {
 }
 
 fixtures.runCLI.init(async ({  }, runTest) => {
-  let cli: CLIMock
+  let cli: CLIMock;
   const cliFactory = (args: string[]) => {
     cli = new CLIMock(args);
-    return cli
-  }
+    return cli;
+  };
   await runTest(cliFactory);
-  cli.kill()
+  cli.kill();
 });
 
 class CLIMock {
   private process: ChildProcessWithoutNullStreams
   private data: string;
-  private waitForText: string
+  private waitForText: string;
   private waitForCallback: () => void;
-  exited: Promise<number>
+  exited: Promise<void>;
 
   constructor(args: string[]) {
     this.data = '';
@@ -224,13 +224,12 @@ class CLIMock {
       this.data += removeAnsiColors(line.toString());
       if (this.waitForCallback && this.data.includes(this.waitForText))
         this.waitForCallback();
-    })
-    this.exited = new Promise(r => this.process.on('exit', () => {
-      if (this.waitForCallback) {
+    });
+    this.exited = new Promise<void>(r => this.process.on('exit', () => {
+      if (this.waitForCallback)
         this.waitForCallback();
-      }
       return r();
-    }))
+    }));
   }
 
   async waitFor(text: string): Promise<void> {

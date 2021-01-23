@@ -13,18 +13,3 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-
-import { ConsoleAPI, InjectedScript } from './consoleApi';
-import { Recorder } from './recorder';
-
-export default class Script {
-  private _consoleAPI: ConsoleAPI  | undefined;
-
-  constructor(injectedScript: InjectedScript, options: { enableRecorder: boolean }) {
-    if ((window as any).playwright)
-      return;
-    this._consoleAPI = new ConsoleAPI(injectedScript);
-    if (options.enableRecorder)
-      new Recorder(injectedScript, this._consoleAPI);
-  }
-}

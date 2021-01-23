@@ -2,22 +2,22 @@ const path = require('path');
 const HtmlWebPackPlugin = require('html-webpack-plugin');
 
 module.exports = {
-  mode: 'development',
+  mode: 'production',
   entry: {
-    app: path.join(__dirname, 'index.ts'),
+    app: path.join(__dirname, 'index.tsx'),
   },
   resolve: {
-    extensions: ['.ts', '.js']
+    extensions: ['.ts', '.js', '.tsx', '.jsx']
   },
   output: {
     globalObject: 'self',
     filename: '[name].bundle.js',
-    path: path.resolve(__dirname, '../../../out/web')
+    path: path.resolve(__dirname, '../../../lib/traceViewer/web')
   },
   module: {
     rules: [
       {
-        test: /\.ts?$/,
+        test: /\.(j|t)sx?$/,
         use: 'ts-loader',
         exclude: /node_modules/
       },
@@ -33,7 +33,8 @@ module.exports = {
   },
   plugins: [
     new HtmlWebPackPlugin({
-      title: 'Playwright Trace Viewer'
+      title: 'Playwright Trace Viewer',
+      template: path.join(__dirname, 'index.html'),
     })
   ]
 };

@@ -39,6 +39,10 @@ export class ScriptController {
 
   private async _ensureInstalledInFrame(frame: playwright.Frame) {
     try {
+      // don't monitor the devtools window
+      if(frame.page().url().startsWith('devtools://')) {
+        return;
+      }
       const frameAsAny = frame as any;
       await frameAsAny._extendInjectedScript(injectedScriptSource.source, { enableRecorder: !!this._recorder });
     } catch (e) {

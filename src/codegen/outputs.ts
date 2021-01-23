@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-import * as fs from 'fs'
+import * as fs from 'fs';
 import * as querystring from 'querystring';
 import { Writable } from 'stream';
 import { highlight } from 'highlight.js';
@@ -85,6 +85,7 @@ export class TerminalOutput implements CodeGeneratorOutput {
     highlightedCode = highlightedCode.replace(/<span class="hljs-subst">/g, '\x1b[38;5;242m');
     highlightedCode = highlightedCode.replace(/<span class="hljs-function">/g, '');
     highlightedCode = highlightedCode.replace(/<span class="hljs-params">/g, '');
+    highlightedCode = highlightedCode.replace(/<span class="hljs-attr">/g, '');
     highlightedCode = highlightedCode.replace(/<\/span>/g, '\x1b[0m');
     highlightedCode = highlightedCode.replace(/&#x27;/g, "'");
     highlightedCode = highlightedCode.replace(/&quot;/g, '"');
